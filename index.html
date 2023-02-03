@@ -7,11 +7,255 @@
     <title>Document</title>
 </head>
 <body>
-    <div id="conteneur-graphique"></div>
-    <script src="./Modules/Primitives.mjs" type="module"></script>
-    <script src="./Modules/Outils.mjs" type="module"></script>
-    <script src="./Modules/Outils.svg.mjs" type="module"></script>
-    <script src="./Modules/Graphique.mjs" type="module"></script>
-    <script src="./index.mjs" type="module"></script>
+    <div id="graph-container"></div>
+    <script defer>
+        class SVG {
+            static svgns= "http://www.w3.org/2000/svg"
+
+            static line(x1, y1, x2, y2, stroke = "black", strokeWidth = 1){
+                let line = document.createElementNS(SVG.svgns, "line");
+                line.setAttribute("x1", x1); line.setAttribute("y1", y1);
+                line.setAttribute("x2", x2);  line.setAttribute("y2", y2);
+                line.setAttribute("stroke", stroke);
+                line.setAttribute("stroke-width", strokeWidth);
+                return line;
+            }
+
+            static rect(x, y, width, height, fill = "white", stroke = "black", strokeWidth = 1){
+                let rect = document.createElementNS(SVG.svgns, "rect");
+                rect.setAttribute("x", x); rect.setAttribute("y", y);
+                rect.setAttribute("width", width); rect.setAttribute("height", height);
+                rect.setAttribute("fill", fill); rect.setAttribute("stroke", stroke);
+                rect.setAttribute("stroke-width", strokeWidth);
+                return rect;
+            };
+
+            static text(x, y, content, angle = 0, size = "1", fill = "black"){
+                let text = document.createElementNS(SVG.svgns, "text");
+                text.setAttribute("x", x); text.setAttribute("y", y);
+                text.setAttribute("transform", `rotate(${angle},${x},${y})`);
+                text.setAttribute("font-size", size + "em");
+                text.setAttribute("fill", fill);
+                text.innerHTML = content;
+                return text;
+            };
+                
+            static alignedText(viewport, content, textAlign, layoutBox, 
+                angle = 0, size = "1", fill = "black"){
+
+                const textItem = SVG.text(0, 0, content, 0, size, fill);
+                viewport.appendChild(textItem);
+                const itemBBox = textItem.getBBox();
+                const x = SVG.getX(itemBBox, textAlign, layoutBox)
+                const y = SVG.getY(itemBBox, textAlign, layoutBox)
+                textItem.setAttribute("x", x);
+                textItem.setAttribute("y", y);
+                if(angle != 0) textItem.setAttribute("transform", `rotate(${angle}, ${x + itemBBox.width / 2}, ${y + itemBBox.height / 2})`);
+                return textItem;
+            };
+            
+            static getX(itemBBox, textAlign, layoutBox){
+                const bboxCoefficient = (textAlign % 3) / 2;
+                return layoutBox.x + (layoutBox.width - itemBBox.width) * bboxCoefficient;
+            };
+            
+            static getY(itemBBox, textAlign, layoutBox){
+                const bboxCoefficient = Math.trunc(textAlign / 3) / 2;
+                return layoutBox.y + itemBBox.height + (layoutBox.height - itemBBox.height) * bboxCoefficient;
+            };
+            
+            static TEXT_ALIGN = {
+                TOP_LEFT: 0,
+                TOP_CENTER: 1,
+                TOP_RIGHT: 2,
+                MIDDLE_LEFT: 3,
+                MIDDLE_CENTER: 4,
+                MIDDLE_RIGHT: 5,
+                BOTTOM_LEFT: 6,
+                BOTTOM_CENTER: 7,
+                BOTTOM_RIGHT: 8,
+            };
+        }
+
+        class Rectangle{
+            constructor(x, y, width, height){
+                this.x = x;
+                this.y = y;
+                this.width = width;
+                this.height = height;
+            }
+        }
+
+        class Graph{
+            static FRACTIONAL_TITLE_LAYOUT_BOX = new Rectangle(0, 0.015, 1, 0);
+            static FRACTIONAL_Y_LABELS_LAYOUT_BOX = new Rectangle(0, 0.15, 0.15, 0.75);
+            static FRACTIONAL_X_LABELS_LAYOUT_BOX = new Rectangle(0.1, 0.9, 0.9, 0.1);
+            static FRACTIONAL_GRID_LAYOUT_BOX = new Rectangle(0.155, 0.13, 0.69, 0.74);
+
+            constructor(title, primaryGraduation, thresholds, processLabel, 
+                data, width = 1090, height = 1000, max = 7000){
+
+                this.titre = title;
+                this.primaryGraduation = primaryGraduation;
+                this.thresholds = thresholds;
+                this.processLabel = processLabel;
+                this.dataSet = data;
+                this.max = max;
+                this.layout = this.#BuildLayout(width, height);
+            }
+
+            AddGraph(container){
+                const viewport = document.createElementNS(SVG.svgns, "svg");
+                container.appendChild(viewport);
+                viewport.setAttribute("viewBox", `0 0 ${this.layout.All.width} ${this.layout.All.height}`);
+                this.#CreateGraph(viewport);
+                return viewport;
+            }
+
+            #BuildLayout(width, height){
+                const dimensions = {width, height};
+                return {
+                    All: new Rectangle(0, 0, dimensions.width, dimensions.height),
+                    Title: this.#BuildLayoutBox(dimensions, Graph.FRACTIONAL_TITLE_LAYOUT_BOX),
+                    YLabels: this.#BuildLayoutBox(dimensions, Graph.FRACTIONAL_Y_LABELS_LAYOUT_BOX),
+                    XLabels: this.#BuildLayoutBox(dimensions, Graph.FRACTIONAL_X_LABELS_LAYOUT_BOX),
+                    Grid: this.#BuildLayoutBox(dimensions, Graph.FRACTIONAL_GRID_LAYOUT_BOX),
+                }
+            }
+
+            #BuildLayoutBox(dimensions, fractionalLayoutBox){
+                return new Rectangle(
+                    fractionalLayoutBox.x * dimensions.width, 
+                    fractionalLayoutBox.y * dimensions.height, 
+                    fractionalLayoutBox.width * dimensions.width, 
+                    fractionalLayoutBox.height * dimensions.height);
+            }
+
+            #CreateGraph(viewport){
+                this.#AddTitle(viewport);
+                this.#AddGraduations(viewport);
+                this.#AddData(viewport);
+                viewport.appendChild(SVG.rect(0, 0, this.layout.All.width, this.layout.All.height, "none", "black", 1));
+            }
+
+            #AddTitle(viewport){
+                const layoutBox = this.layout.Title;
+                const titre = SVG.alignedText(viewport, this.titre, SVG.TEXT_ALIGN.TOP_CENTER, layoutBox, 0, 2);
+                titre.setAttribute("font-weight", "bold");
+                viewport.appendChild(SVG.rect(layoutBox.x, layoutBox.y, layoutBox.width, layoutBox.height, "none", "black", 1));
+            }
+
+            #AddGraduations(viewport){
+                const nbMainGraduations = this.max / this.primaryGraduation;
+                const mainGraduationsSpacing = this.layout.Grid.height / nbMainGraduations;
+                const secondaryGraduationsSpacing = mainGraduationsSpacing / 10;
+
+                const startX = this.layout.Grid.x;
+                const startY = this.layout.Grid.y;
+                const endX = this.layout.Grid.x + this.layout.Grid.width;
+                for(let i = 0; i <= nbMainGraduations ; ++i ){
+                    const mainY = startY + i * mainGraduationsSpacing;
+                    viewport.appendChild(SVG.line(startX, mainY, endX, mainY, "black", 2));
+                    this.#AddGraduationLabel(viewport, this.max - i * this.primaryGraduation, mainY)
+                    if (i < nbMainGraduations)
+                        for (let j = 1; j < 10; ++j){
+                            const secY = mainY + j * secondaryGraduationsSpacing;
+                            viewport.appendChild(SVG.line(startX, secY, endX, secY, "hsl(0 0% 60%)", 1));
+                        }
+                }
+            }
+
+            #AddGraduationLabel(viewport, key, y){
+                const labelText = this.processLabel(key);
+                const layoutBox = new Rectangle(0, y, this.layout.YLabels.width, 0);
+                const label = SVG.alignedText(viewport, labelText, SVG.TEXT_ALIGN.MIDDLE_RIGHT, layoutBox, 0, 1.75);
+                return label;
+            }
+
+            #AddData(viewport){
+                const margin = 12;
+                const width = (this.layout.Grid.width - margin) / this.dataSet.length - margin;
+                const baseY = this.layout.Grid.y + this.layout.Grid.height;
+                for(let i in this.dataSet){
+                    this.#DrawDataBar(viewport, i, baseY, width, margin);
+                }
+            }
+
+            #DrawDataBar(viewport, i, baseY, width, margin){
+                const { label, value } = this.dataSet[i];
+                const height = this.layout.Grid.height * value / this.max
+                const r = new Rectangle(
+                    this.layout.Grid.x + margin + i * (margin + width),
+                    baseY - height,
+                    width,
+                    height
+                )
+                const bar = SVG.rect(r.x, r.y, r.width, r.height, this.#GetColor(value));
+                viewport.appendChild(bar);
+                this.#DrawDataValue(viewport, value, r);
+                this.#DrawDataLabel(viewport, label, r);
+            }
+
+            #GetColor(value){
+                for(let [seuil, color] of Object.entries(this.thresholds)){
+                    if(value <= seuil) return color;
+                }
+                return "None";
+            }
+
+            #DrawDataValue(viewport, value, barRectangle){
+                const margin = 20;
+                const angle = 0;
+                const fontSize = 1.4;
+                const layoutBox = new Rectangle(
+                    barRectangle.x, 
+                    barRectangle.y - margin, 
+                    barRectangle.width, 
+                    0);
+                SVG.alignedText(
+                    viewport, 
+                    this.processLabel(value), 
+                    SVG.TEXT_ALIGN.MIDDLE_CENTER, 
+                    layoutBox, 
+                    angle, 
+                    fontSize);
+            }
+
+            #DrawDataLabel(viewport, label, barRectangle){
+                const margin = 20;
+                const angle = 45;
+                const fontSize = 1.4;
+                viewport.appendChild(
+                    SVG.text(
+                        barRectangle.x, 
+                        barRectangle.y + barRectangle.height + margin, 
+                        label, 
+                        angle, 
+                        fontSize));
+            }
+        }
+
+
+        const mois = ["janvier", "février", "mars", "avril", "mai", "juin", 
+            "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+
+        const ventes = [6500, 5550, 4200, 4525, 2500, 
+            1500, 500, 1000, 1750, 2300, 3700, 3500];
+
+        const data = mois.map((m, i) => ({label: m, value: ventes[i]}));
+        const title = "Ventes 2022";
+        const traiterEtiquette = (valeur) => `$ ${valeur}`;
+        const primaryGraduation = 1000;
+        const thresholds = {
+            1000: "red",
+            3000: "orange",
+            4500: "yellow",
+            7000: "green"
+        };
+
+        const myGraph = new Graph(title, primaryGraduation, thresholds, traiterEtiquette, data);
+        const graphContainer = document.getElementById("graph-container");
+        myGraph.AddGraph(graphContainer);
+    </script>
 </body>
 </html>
