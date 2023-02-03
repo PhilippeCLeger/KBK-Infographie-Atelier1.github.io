@@ -2,7 +2,7 @@ import { Graphique } from "./Modules/Graphique.mjs"
 
 const mois = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
 const ventes = [6500, 5550, 4200, 4525, 2500, 1500, 500, 1000, 1750, 2300, 3700, 3500];
-if(true){
+if(false){
     mois.push("other");
     ventes.push(6543.21);
 }
